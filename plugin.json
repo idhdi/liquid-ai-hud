@@ -1,0 +1,6 @@
+{
+  "name": "liquid-ai-hud",
+  "displayName": "Liquid AI Cockpit",
+  "description": "Fluid Optical AI Cockpit based on LiquidGlass-UI, featuring gooey tabs, fresnel rim lighting, caustics, and optical lens.",
+  "version": "1.0.0"
+}

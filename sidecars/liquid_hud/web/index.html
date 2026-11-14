@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquid AI Cockpit</title>
+  <style>
+    /* ============================================================
+       LiquidGlass Design Tokens & Optical Physics Styles
+       ============================================================ */
+    :root {
+      --lg-bg: #070d18;
+      --lg-scene: radial-gradient(circle at 15% 20%, #173256 0%, #08101e 50%, #03060c 100%);
+      --lg-glass-bg: rgba(255, 255, 255, 0.08);
+      --lg-glass-bg-hover: rgba(255, 255, 255, 0.14);
+      --lg-glass-border: rgba(255, 255, 255, 0.22);
+      --lg-glass-highlight: rgba(255, 255, 255, 0.6);
+      --lg-accent-cyan: #5ec8ff;
+      --lg-accent-purple: #9d7bff;
+      --lg-accent-green: #4ade80;
+      --lg-accent-glow: rgba(94, 200, 255, 0.35);
+      --lg-blur: blur(20px) saturate(190%);
+      --lg-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --lg-ease-fluid: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--lg-bg);
+      color: #fff;
+      font-family: var(--lg-font);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 24px 16px;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* ---------- 水下波光焦散层 (A4: Caustics Layer) ---------- */
+    .caustics-layer {
+      position: fixed;
+      inset: -50px;
+      pointer-events: none;
+      z-index: 0;
+      background: 
+        radial-gradient(ellipse at 30% 20%, rgba(94, 200, 255, 0.18), transparent 45%),
+        radial-gradient(ellipse at 75% 65%, rgba(157, 123, 255, 0.16), transparent 50%),
+        repeating-radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.04) 0px, transparent 32px, rgba(94, 200, 255, 0.06) 64px);
+      filter: blur(14px);
+      animation: caustics-drift 22s ease-in-out infinite alternate;
+    }
+    @keyframes caustics-drift {
+      0%   { transform: scale(1) translate(0, 0); }
+      50%  { transform: scale(1.08) translate(-2%, 3%); }
+      100% { transform: scale(1) translate(2%, -2%); }
+    }
+
+    /* ---------- HUD 主体容器 ---------- */
+    .hud-shell {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 860px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* ---------- 基础液态玻璃面板 ---------- */
+    .lg-panel {
+      position: relative;
+      background: var(--lg-glass-bg);
+      backdrop-filter: var(--lg-blur);
+      -webkit-backdrop-filter: var(--lg-blur);
+      border: 1px solid var(--lg-glass-border);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 
+        0 12px 40px rgba(0, 0, 0, 0.4),
+        inset 0 1px 1px var(--lg-glass-highlight),
+        0 0 45px rgba(94, 200, 255, 0.06);
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      overflow: hidden;
+    }
+
+    /* ---------- A2: 动态菲涅尔边缘光 (Fresnel Rim) ---------- */
+    .lg-fresnel-rim {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      padding: 1.5px;
+      background: radial-gradient(240px circle at var(--fx, 50%) var(--fy, 50%), rgba(255,255,255,0.95), var(--lg-accent-cyan) 30%, transparent 70%);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      opacity: 0;
+      transition: opacity 0.35s ease;
+      z-index: 3;
+    }
+    .lg-panel:hover .lg-fresnel-rim {
+      opacity: 1;
+    }
+
+    /* ---------- 顶部标题与状态导航栏 ---------- */
+    .hud-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .hud-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hud-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--lg-accent-cyan), var(--lg-accent-purple));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 20px rgba(94, 200, 255, 0.5);
+    }
+    .hud-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      background: linear-gradient(110deg, #fff 30%, var(--lg-accent-cyan) 90%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hud-subtitle {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    /* ---------- A1: Gooey Tabs (水滴粘滞切换) ---------- */
+    .goo-tabs-container {
+      position: relative;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--lg-glass-border);
+      border-radius: 999px;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      filter: url(#goo-filter);
+    }
+    .goo-pill {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      left: 4px;
+      width: 105px;
+      background: linear-gradient(135deg, var(--lg-accent-cyan), var(--lg-accent-purple));
+      border-radius: 999px;
+      transition: transform 0.45s var(--lg-ease-fluid), width 0.45s var(--lg-ease-fluid);
+      box-shadow: 0 0 16px rgba(94, 200, 255, 0.5);
+      z-index: 1;
+    }
+    .goo-tail {
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      left: 12px;
+      width: 24px;
+      border-radius: 50%;
+      background: var(--lg-accent-cyan);
+      opacity: 0;
+      transition: transform 0.3s ease, opacity 0.2s ease;
+      z-index: 0;
+    }
+    .goo-tab-btn {
+      position: relative;
+      z-index: 2;
+      background: transparent;
+      border: 0;
+      color: rgba(255, 255, 255, 0.75);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 18px;
+      cursor: pointer;
+      transition: color 0.25s ease;
+      white-space: nowrap;
+    }
+    .goo-tab-btn.active {
+      color: #030813;
+      text-shadow: 0 0 1px rgba(0,0,0,0.4);
+    }
+
+    /* ---------- Agent 思考态流体水球 (Thinking Pulse) ---------- */
+    .agent-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 14px;
+      padding: 10px 16px;
+      font-size: 13px;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .fluid-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--lg-accent-cyan);
+      box-shadow: 0 0 12px var(--lg-accent-cyan);
+      position: relative;
+    }
+    .fluid-dot::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 1.5px solid var(--lg-accent-cyan);
+      animation: fluid-pulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+    }
+    @keyframes fluid-pulse {
+      0%   { transform: scale(0.6); opacity: 1; }
+      100% { transform: scale(2.4); opacity: 0; }
+    }
+    .status-text {
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    /* ---------- 指标看板网格 (4 Stats) ---------- */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+    }
+    .stat-card {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .stat-value {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-meta {
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .meta-up { color: var(--lg-accent-green); }
+    .meta-down { color: #ff6b81; }
+
+    /* ---------- 液态流光进度条 ---------- */
+    .fluid-progress {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+      position: relative;
+    }
+    .fluid-progress-bar {
+      height: 100%;
+      width: 68%;
+      background: linear-gradient(90deg, var(--lg-accent-cyan), var(--lg-accent-purple));
+      border-radius: 999px;
+      position: relative;
+      transition: width 0.6s var(--lg-ease-fluid);
+      box-shadow: 0 0 10px rgba(94, 200, 255, 0.6);
+    }
+    .fluid-progress-bar::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.7), transparent);
+      animation: progress-sheen 2.4s ease-in-out infinite;
+    }
+    @keyframes progress-sheen {
+      0% { transform: translateX(-100%); }
+      60%, 100% { transform: translateX(100%); }
+    }
+
+    /* ---------- A3: 3D 玻璃物理厚度卡片 (Tilt & Depth) ---------- */
+    .tilt-card {
+      perspective: 1000px;
+      transform-style: preserve-3d;
+      transition: transform 0.15s ease-out;
+      cursor: default;
+    }
+    .tilt-inner {
+      transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+      transform-style: preserve-3d;
+      transition: transform 0.15s ease-out;
+    }
+    .depth-layer-front {
+      transform: translateZ(24px);
+    }
+    .depth-layer-mid {
+      transform: translateZ(10px);
+    }
+
+    /* ---------- A5: 凝结水珠与湿痕滑落 ---------- */
+    .droplet-container {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .droplet {
+      position: absolute;
+      width: var(--size, 14px);
+      height: calc(var(--size, 14px) * 1.15);
+      border-radius: 65% 35% 60% 40% / 70% 65% 35% 30%;
+      background: 
+        radial-gradient(circle at 30% 20%, rgba(255,255,255,0.8), rgba(255,255,255,0.1) 40%, transparent 60%),
+        radial-gradient(circle at 50% 50%, rgba(94, 200, 255, 0.15), transparent 70%);
+      box-shadow: 
+        inset 0 0 1px 1px rgba(255,255,255,0.25),
+        inset 0 -2px 4px rgba(255,255,255,0.3),
+        0 2px 4px rgba(0,0,0,0.35);
+      transition: transform 0.2s ease, top 1.8s ease-in-out, opacity 0.5s ease;
+    }
+    .wet-trail {
+      position: absolute;
+      width: 3px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.3), transparent);
+      border-radius: 2px;
+      opacity: 0.7;
+      transition: opacity 1.5s ease;
+    }
+
+    /* ---------- 代码折射放大透镜 (<lg-lens> 物理演示层) ---------- */
+    .lens-viewport {
+      position: relative;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 16px;
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #9cdcfe;
+      overflow: hidden;
+      user-select: none;
+    }
+    .lens-cursor {
+      position: absolute;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      border: 2px solid rgba(94, 200, 255, 0.85);
+      box-shadow: 
+        0 0 25px rgba(94, 200, 255, 0.5),
+        inset 0 0 18px rgba(157, 123, 255, 0.4);
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      display: none;
+      backdrop-filter: blur(1px) contrast(120%);
+      z-index: 10;
+      background: radial-gradient(circle at center, transparent 60%, rgba(255, 110, 180, 0.2) 80%, rgba(94, 200, 255, 0.35) 100%);
+    }
+
+    /* ---------- 底部液态控制按钮 ---------- */
+    .hud-controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .lg-button {
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-size: 13.5px;
+      font-weight: 600;
+      border: 1px solid var(--lg-glass-border);
+      background: var(--lg-glass-bg);
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.25s var(--lg-ease-fluid);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    }
+    .lg-button:hover {
+      background: var(--lg-glass-bg-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(94, 200, 255, 0.3);
+      border-color: rgba(255,255,255,0.45);
+    }
+    .lg-button:active {
+      transform: translateY(0) scale(0.96);
+    }
+    .lg-button.primary {
+      background: linear-gradient(135deg, var(--lg-accent-cyan), var(--lg-accent-purple));
+      color: #050d1a;
+      border-color: rgba(255,255,255,0.6);
+      box-shadow: 0 4px 20px rgba(94, 200, 255, 0.4);
+    }
+
+    /* 水滴黏连开关 (Gooey Switch) */
+    .switch-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.85);
+      cursor: pointer;
+    }
+    .goo-switch {
+      width: 48px;
+      height: 26px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid var(--lg-glass-border);
+      position: relative;
+      transition: background 0.3s ease;
+    }
+    .goo-switch.active {
+      background: rgba(94, 200, 255, 0.7);
+    }
+    .switch-ball {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      transition: left 0.4s var(--lg-ease-fluid), transform 0.2s ease;
+    }
+    .goo-switch.active .switch-ball {
+      left: 24px;
+      transform: scale(1.1);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SVG Goo 滤镜 (用于 A1 水滴粘滞与拉丝融合) -->
+  <svg width="0" height="0" style="position:absolute;">
+    <defs>
+      <filter id="goo-filter">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+        <feColorMatrix in="blur" mode="matrix" values="
+          1 0 0 0 0
+          0 1 0 0 0
+          0 0 1 0 0
+          0 0 0 20 -8
+        " result="goo" />
+        <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- A4: 水下波光焦散层 -->
+  <div class="caustics-layer"></div>
+
+  <!-- HUD 核心控制舱 -->
+  <div class="hud-shell">
+
+    <!-- 顶部状态栏 -->
+    <header class="lg-panel hud-header">
+      <div class="lg-fresnel-rim"></div>
+      <div class="hud-title-wrap">
+        <div class="hud-logo">💧</div>
+        <div>
+          <h1 class="hud-title">Liquid AI Cockpit</h1>
+          <div class="hud-subtitle">Autonomous Fluid Optical HUD v1.0</div>
+        </div>
+      </div>
+
+      <!-- A1: Gooey Model Tabs -->
+      <div class="goo-tabs-container" id="modelTabs">
+        <div class="goo-pill" id="tabsPill"></div>
+        <div class="goo-tail" id="tabsTail"></div>
+        <button class="goo-tab-btn active" data-index="0" data-width="125">Gemini 3.8 Flash</button>
+        <button class="goo-tab-btn" data-index="1" data-width="135">Claude 3.7 Sonnet</button>
+        <button class="goo-tab-btn" data-index="2" data-width="100">DeepSeek R1</button>
+      </div>
+    </header>
+
+    <!-- AI 思考与心流状态条 -->
+    <div class="agent-status-bar">
+      <div class="status-indicator">
+        <div class="fluid-dot" id="statusDot"></div>
+        <span class="status-text" id="statusText">AI 状态：正在运行推导链 (Synthesizing Reasoning Chain)</span>
+      </div>
+      <div style="font-size:12px; color:rgba(255,255,255,0.65);">
+        <span>会话 ID: </span><code style="color:var(--lg-accent-cyan);">c0e8af06-0706</code>
+      </div>
+    </div>
+
+    <!-- 4 个液态指标卡 -->
+    <div class="stats-grid">
+      <div class="lg-panel stat-card">
+        <div class="lg-fresnel-rim"></div>
+        <div class="stat-label">上下文容量 (Context)</div>
+        <div class="stat-value" id="valContext">18,420 <span style="font-size:14px;color:rgba(255,255,255,0.5);">/ 32k</span></div>
+        <div class="stat-meta meta-up">↑ 占用 57.5% (健康)</div>
+        <div class="fluid-progress"><div class="fluid-progress-bar" id="progressBar" style="width: 57.5%;"></div></div>
+      </div>
+
+      <div class="lg-panel stat-card">
+        <div class="lg-fresnel-rim"></div>
+        <div class="stat-label">吞吐速率 (Speed)</div>
+        <div class="stat-value" id="valSpeed">94.6 <span style="font-size:14px;color:rgba(255,255,255,0.5);">t/s</span></div>
+        <div class="stat-meta meta-up">⚡ 极速水流</div>
+      </div>
+
+      <div class="lg-panel stat-card">
+        <div class="lg-fresnel-rim"></div>
+        <div class="stat-label">并行 Subagents</div>
+        <div class="stat-value" id="valAgents">3 <span style="font-size:14px;color:rgba(255,255,255,0.5);">活跃</span></div>
+        <div class="stat-meta" style="color:var(--lg-accent-cyan);">● Researcher / ● Auditor</div>
+      </div>
+
+      <div class="lg-panel stat-card">
+        <div class="lg-fresnel-rim"></div>
+        <div class="stat-label">神经温度 (Thermal)</div>
+        <div class="stat-value" id="valTemp">0.70</div>
+        <div class="stat-meta meta-up">✓ 最优流体阻尼</div>
+      </div>
+    </div>
+
+    <!-- A3: 3D 物理厚度卡片 + A5 水珠滑落 -->
+    <div class="lg-panel tilt-card" id="tiltCard">
+      <div class="lg-fresnel-rim"></div>
+      <div class="droplet-container" id="dropletLayer">
+        <!-- 动态凝结水珠 -->
+        <div class="droplet" style="top:25px; left:65px; --size:13px;"></div>
+        <div class="droplet" style="top:50px; right:120px; --size:15px;" id="slidingDroplet"></div>
+        <div class="droplet" style="top:110px; left:240px; --size:11px;"></div>
+      </div>
+
+      <div class="tilt-inner depth-layer-front">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h2 style="font-size:16px; font-weight:700;">🚀 活跃任务: Module A 物理光学特效验收与分支合并</h2>
+          <span style="font-size:11px; padding:3px 8px; border-radius:999px; background:rgba(74,222,128,0.25); color:var(--lg-accent-green); border:1px solid rgba(74,222,128,0.4);">RUNNING</span>
+        </div>
+        <p style="font-size:13.5px; color:rgba(255,255,255,0.7); line-height:1.6; margin-bottom:14px;">
+          当前正在运行真实 Chrome CDP 自动化验收。已捕获 4 份演示页渲染日志，已验证 Tabs 水滴粘滞拉丝中间帧（gooey neck），5 条湿痕已就绪。
+        </p>
+        <div style="display:flex; gap:8px;">
+          <button class="lg-button" style="padding:6px 14px; font-size:12px;">查看日志流</button>
+          <button class="lg-button primary" style="padding:6px 14px; font-size:12px;">审查生成的 Diff</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 代码折射放大透镜 (<lg-lens> 交互演示区) -->
+    <div class="lg-panel">
+      <div class="lg-fresnel-rim"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="font-size:14px; font-weight:600; color:rgba(255,255,255,0.85);">🔍 代码微观折射透镜 (Optical Lens Inspector)</h3>
+        <span style="font-size:12px; color:rgba(255,255,255,0.5);">将鼠标移入代码区域体验物理放大与 RGB 色散</span>
+      </div>
+
+      <div class="lens-viewport" id="lensViewport">
+        <div class="lens-cursor" id="lensGlass"></div>
+        <pre><code>// 💧 LiquidGlass Engine: Autonomous Fluid Reasoning Hook
+export async function dispatchAgentWave(signal: NeuralPulse): Promise<FluidResult> {
+  const dispersionMap = computeFresnelVector(signal.pointerX, signal.pointerY);
+  const stream = await model.generateStream({
+    temperature: 0.7,
+    gooeyThreshold: 22,
+    causticsRefraction: true
+  });
+  return stream.pipeThrough(new LiquidTransformStream());
+}</code></pre>
+      </div>
+    </div>
+
+    <!-- 底部控制按钮与水滴开关 -->
+    <div class="hud-controls-row">
+      <div class="btn-group">
+        <button class="lg-button primary" id="btnSimulate">🌊 模拟 AI 思考脉冲</button>
+        <button class="lg-button" id="btnDropTrickle">💧 触发水滴滑落</button>
+      </div>
+
+      <div class="switch-wrap" id="switchWrap">
+        <span>思维链深度展开 (Deep CoT)</span>
+        <div class="goo-switch active" id="gooSwitch"><div class="switch-ball"></div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ---------- A1: Gooey Tabs 切换逻辑 ----------
+    const tabs = document.querySelectorAll('.goo-tab-btn');
+    const pill = document.getElementById('tabsPill');
+    const tail = document.getElementById('tabsTail');
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        let offsetLeft = 4;
+        for (let i = 0; i < index; i++) {
+          offsetLeft += tabs[i].offsetWidth;
+        }
+        const width = tab.offsetWidth;
+
+        tail.style.opacity = '1';
+        tail.style.transform = `translateX(${offsetLeft + width / 2}px) scale(1.4)`;
+        setTimeout(() => {
+          tail.style.opacity = '0';
+          tail.style.transform = `translateX(${offsetLeft + width / 2}px) scale(0.6)`;
+        }, 220);
+
+        pill.style.transform = `translateX(${offsetLeft - 4}px)`;
+        pill.style.width = `${width}px`;
+
+        document.getElementById('statusText').textContent = `已接入模型：${tab.textContent} (水感驱动已就绪)`;
+      });
+    });
+
+    // ---------- A2: 菲涅尔边缘光 (Fresnel Mouse Pointer) ----------
+    document.querySelectorAll('.lg-panel').forEach(panel => {
+      panel.addEventListener('mousemove', (e) => {
+        const rect = panel.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        panel.style.setProperty('--fx', `${x}px`);
+        panel.style.setProperty('--fy', `${y}px`);
+      });
+    });
+
+    // ---------- A3: 3D 物理厚度卡片倾斜 ----------
+    const tiltCard = document.getElementById('tiltCard');
+    tiltCard.addEventListener('mousemove', (e) => {
+      const rect = tiltCard.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      tiltCard.style.setProperty('--ry', `${x * 12}deg`);
+      tiltCard.style.setProperty('--rx', `${-y * 12}deg`);
+    });
+    tiltCard.addEventListener('mouseleave', () => {
+      tiltCard.style.setProperty('--ry', `0deg`);
+      tiltCard.style.setProperty('--rx', `0deg`);
+    });
+
+    // ---------- 代码折射放大镜 (<lg-lens> 交互) ----------
+    const viewport = document.getElementById('lensViewport');
+    const lens = document.getElementById('lensGlass');
+    viewport.addEventListener('mousemove', (e) => {
+      const rect = viewport.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      lens.style.display = 'block';
+      lens.style.left = `${x}px`;
+      lens.style.top = `${y}px`;
+    });
+    viewport.addEventListener('mouseleave', () => {
+      lens.style.display = 'none';
+    });
+
+    // ---------- A5: 触发水滴滑落动画 ----------
+    const btnDropTrickle = document.getElementById('btnDropTrickle');
+    const droplet = document.getElementById('slidingDroplet');
+    const dropletLayer = document.getElementById('dropletLayer');
+
+    btnDropTrickle.addEventListener('click', () => {
+      const initialTop = 50;
+      const targetTop = 160;
+
+      const trail = document.createElement('div');
+      trail.className = 'wet-trail';
+      trail.style.left = `${droplet.offsetLeft + 6}px`;
+      trail.style.top = `${initialTop}px`;
+      trail.style.height = '0px';
+      dropletLayer.appendChild(trail);
+
+      droplet.style.transform = 'scale(0.85, 1.45)';
+      droplet.style.top = `${targetTop}px`;
+      trail.style.height = `${targetTop - initialTop}px`;
+
+      setTimeout(() => {
+        droplet.style.transform = 'scale(1, 1)';
+        droplet.style.opacity = '0';
+        trail.style.opacity = '0';
+        setTimeout(() => {
+          droplet.style.top = `${initialTop}px`;
+          droplet.style.opacity = '1';
+          trail.remove();
+        }, 800);
+      }, 1800);
+    });
+
+    // ---------- 模拟 AI 思考脉冲 ----------
+    const btnSimulate = document.getElementById('btnSimulate');
+    const statusText = document.getElementById('statusText');
+    const statusDot = document.getElementById('statusDot');
+    const progressBar = document.getElementById('progressBar');
+    const valSpeed = document.getElementById('valSpeed');
+
+    let isSimulating = false;
+    btnSimulate.addEventListener('click', () => {
+      if (isSimulating) return;
+      isSimulating = true;
+
+      statusText.textContent = "AI 正在深度思考中：分析 AST 语法树并优化置换贴图...";
+      statusDot.style.background = "#fbbf24";
+      statusDot.style.boxShadow = "0 0 16px #fbbf24";
+
+      let p = 57.5;
+      const interval = setInterval(() => {
+        p += 2.5;
+        if (p > 92) p = 92;
+        progressBar.style.width = `${p}%`;
+        valSpeed.innerHTML = `${(Math.random() * 20 + 95).toFixed(1)} <span style="font-size:14px;color:rgba(255,255,255,0.5);">t/s</span>`;
+      }, 200);
+
+      setTimeout(() => {
+        clearInterval(interval);
+        statusText.textContent = "✓ 推导完成！生成的补丁已成功通过自动化回归校验。";
+        statusDot.style.background = "var(--lg-accent-green)";
+        statusDot.style.boxShadow = "0 0 16px var(--lg-accent-green)";
+        isSimulating = false;
+      }, 2600);
+    });
+
+    // ---------- Gooey Switch 点击切换 ----------
+    const switchWrap = document.getElementById('switchWrap');
+    const gooSwitch = document.getElementById('gooSwitch');
+    switchWrap.addEventListener('click', () => {
+      gooSwitch.classList.toggle('active');
+    });
+  </script>
+</body>
+</html>
