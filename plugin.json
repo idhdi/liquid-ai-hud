@@ -1,6 +1,24 @@
 {
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "liquid-ai-hud",
   "displayName": "Liquid AI Cockpit",
+  "version": "1.0.1",
   "description": "Fluid Optical AI Cockpit based on LiquidGlass-UI, featuring gooey tabs, fresnel rim lighting, caustics, and optical lens.",
-  "version": "1.0.0"
+  "logo": "assets/logo.svg",
+  "author": {
+    "name": "idhdi",
+    "url": "https://github.com/idhdi"
+  },
+  "homepage": "https://github.com/idhdi/liquid-ai-hud",
+  "repository": "https://github.com/idhdi/liquid-ai-hud",
+  "license": "MIT",
+  "keywords": [
+    "antigravity-plugin",
+    "liquid-glass",
+    "ai-cockpit",
+    "hud",
+    "gooey",
+    "fresnel",
+    "caustics"
+  ]
 }

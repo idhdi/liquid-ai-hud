@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <title>Liquid AI Cockpit</title>
   <style>
     /* ============================================================
@@ -153,7 +154,14 @@
       padding: 4px;
       display: flex;
       align-items: center;
+    }
+    /* goo 滤镜只作用于液滴层，避免把标签文字一起模糊 */
+    .goo-blob-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
       filter: url(#goo-filter);
+      z-index: 0;
     }
     .goo-pill {
       position: absolute;
@@ -366,6 +374,14 @@
       overflow: hidden;
       user-select: none;
     }
+    .lens-viewport pre {
+      margin: 0;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .lens-viewport code {
+      font-family: inherit;
+    }
     .lens-cursor {
       position: absolute;
       width: 140px;
@@ -463,6 +479,40 @@
       left: 24px;
       transform: scale(1.1);
     }
+
+    /* ---------- Auxiliary Pane 窄宽度适配 ---------- */
+    @media (max-width: 560px) {
+      body { padding: 14px 10px; }
+      .hud-shell { gap: 14px; }
+      .lg-panel { padding: 16px; border-radius: 16px; }
+      .hud-title { font-size: 17px; }
+      .hud-subtitle { font-size: 11px; }
+      .hud-controls-row { flex-direction: column; align-items: stretch; }
+      .btn-group { justify-content: stretch; }
+      .btn-group .lg-button { flex: 1; text-align: center; }
+      .lens-viewport { height: 200px; }
+      .goo-tabs-container { width: 100%; }
+      .goo-tab-btn {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 8px 6px;
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .agent-status-bar { flex-direction: column; align-items: flex-start; gap: 6px; }
+    }
+
+    /* ---------- 无障碍：尊重减少动画偏好 ---------- */
+    @media (prefers-reduced-motion: reduce) {
+      .caustics-layer,
+      .droplet,
+      .lens-cursor,
+      .goo-switch,
+      .switch-ball,
+      .fluid-dot { animation: none !important; }
+      * { transition-duration: 0.01ms !important; }
+    }
   </style>
 </head>
 <body>
@@ -496,17 +546,19 @@
         <div class="hud-logo">💧</div>
         <div>
           <h1 class="hud-title">Liquid AI Cockpit</h1>
-          <div class="hud-subtitle">Autonomous Fluid Optical HUD v1.0</div>
+          <div class="hud-subtitle">Autonomous Fluid Optical HUD v1.0.1</div>
         </div>
       </div>
 
       <!-- A1: Gooey Model Tabs -->
-      <div class="goo-tabs-container" id="modelTabs">
-        <div class="goo-pill" id="tabsPill"></div>
-        <div class="goo-tail" id="tabsTail"></div>
-        <button class="goo-tab-btn active" data-index="0" data-width="125">Gemini 3.8 Flash</button>
-        <button class="goo-tab-btn" data-index="1" data-width="135">Claude 3.7 Sonnet</button>
-        <button class="goo-tab-btn" data-index="2" data-width="100">DeepSeek R1</button>
+      <div class="goo-tabs-container" id="modelTabs" role="tablist" aria-label="模型选择">
+        <div class="goo-blob-layer" aria-hidden="true">
+          <div class="goo-pill" id="tabsPill"></div>
+          <div class="goo-tail" id="tabsTail"></div>
+        </div>
+        <button class="goo-tab-btn active" data-index="0" data-width="125" role="tab" aria-selected="true">Gemini 3.8 Flash</button>
+        <button class="goo-tab-btn" data-index="1" data-width="135" role="tab" aria-selected="false">Claude 3.7 Sonnet</button>
+        <button class="goo-tab-btn" data-index="2" data-width="100" role="tab" aria-selected="false">DeepSeek R1</button>
       </div>
     </header>
 
@@ -514,7 +566,7 @@
     <div class="agent-status-bar">
       <div class="status-indicator">
         <div class="fluid-dot" id="statusDot"></div>
-        <span class="status-text" id="statusText">AI 状态：正在运行推导链 (Synthesizing Reasoning Chain)</span>
+        <span class="status-text" id="statusText" aria-live="polite">AI 状态：正在运行推导链 (Synthesizing Reasoning Chain)</span>
       </div>
       <div style="font-size:12px; color:rgba(255,255,255,0.65);">
         <span>会话 ID: </span><code style="color:var(--lg-accent-cyan);">c0e8af06-0706</code>
@@ -528,7 +580,7 @@
         <div class="stat-label">上下文容量 (Context)</div>
         <div class="stat-value" id="valContext">18,420 <span style="font-size:14px;color:rgba(255,255,255,0.5);">/ 32k</span></div>
         <div class="stat-meta meta-up">↑ 占用 57.5% (健康)</div>
-        <div class="fluid-progress"><div class="fluid-progress-bar" id="progressBar" style="width: 57.5%;"></div></div>
+        <div class="fluid-progress" id="progressTrack" role="progressbar" aria-label="上下文容量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="57.5"><div class="fluid-progress-bar" id="progressBar" style="width: 57.5%;"></div></div>
       </div>
 
       <div class="lg-panel stat-card">
@@ -589,7 +641,7 @@
       <div class="lens-viewport" id="lensViewport">
         <div class="lens-cursor" id="lensGlass"></div>
         <pre><code>// 💧 LiquidGlass Engine: Autonomous Fluid Reasoning Hook
-export async function dispatchAgentWave(signal: NeuralPulse): Promise<FluidResult> {
+export async function dispatchAgentWave(signal: NeuralPulse): Promise&lt;FluidResult&gt; {
   const dispersionMap = computeFresnelVector(signal.pointerX, signal.pointerY);
   const stream = await model.generateStream({
     temperature: 0.7,
@@ -608,9 +660,9 @@ export async function dispatchAgentWave(signal: NeuralPulse): Promise<FluidResul
         <button class="lg-button" id="btnDropTrickle">💧 触发水滴滑落</button>
       </div>
 
-      <div class="switch-wrap" id="switchWrap">
+      <div class="switch-wrap" id="switchWrap" role="switch" tabindex="0" aria-checked="true" aria-label="思维链深度展开 (Deep CoT)">
         <span>思维链深度展开 (Deep CoT)</span>
-        <div class="goo-switch active" id="gooSwitch"><div class="switch-ball"></div></div>
+        <div class="goo-switch active" id="gooSwitch" aria-hidden="true"><div class="switch-ball"></div></div>
       </div>
     </div>
 
@@ -622,30 +674,47 @@ export async function dispatchAgentWave(signal: NeuralPulse): Promise<FluidResul
     const pill = document.getElementById('tabsPill');
     const tail = document.getElementById('tabsTail');
 
-    tabs.forEach((tab, index) => {
-      tab.addEventListener('click', () => {
-        tabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
+    function selectTab(tab, index, animate) {
+      tabs.forEach(t => {
+        t.classList.remove('active');
+        t.setAttribute('aria-selected', 'false');
+      });
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
 
-        let offsetLeft = 4;
-        for (let i = 0; i < index; i++) {
-          offsetLeft += tabs[i].offsetWidth;
-        }
-        const width = tab.offsetWidth;
+      let offsetLeft = 4;
+      for (let i = 0; i < index; i++) {
+        offsetLeft += tabs[i].offsetWidth;
+      }
+      const width = tab.offsetWidth;
 
+      if (animate) {
         tail.style.opacity = '1';
         tail.style.transform = `translateX(${offsetLeft + width / 2}px) scale(1.4)`;
         setTimeout(() => {
           tail.style.opacity = '0';
           tail.style.transform = `translateX(${offsetLeft + width / 2}px) scale(0.6)`;
         }, 220);
+      }
 
-        pill.style.transform = `translateX(${offsetLeft - 4}px)`;
-        pill.style.width = `${width}px`;
+      pill.style.transform = `translateX(${offsetLeft - 4}px)`;
+      pill.style.width = `${width}px`;
 
-        document.getElementById('statusText').textContent = `已接入模型：${tab.textContent} (水感驱动已就绪)`;
-      });
+      const statusEl = document.getElementById('statusText');
+      if (statusEl) statusEl.textContent = `已接入模型：${tab.textContent.trim()} (水感驱动已就绪)`;
+    }
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => selectTab(tab, index, true));
     });
+
+    // 初始对齐 + 容器尺寸变化后重新定位当前激活标签
+    function syncActiveTab() {
+      const active = document.querySelector('.goo-tab-btn.active') || tabs[0];
+      if (active) selectTab(active, Array.prototype.indexOf.call(tabs, active), false);
+    }
+    requestAnimationFrame(syncActiveTab);
+    window.addEventListener('resize', syncActiveTab);
 
     // ---------- A2: 菲涅尔边缘光 (Fresnel Mouse Pointer) ----------
     document.querySelectorAll('.lg-panel').forEach(panel => {
@@ -724,6 +793,7 @@ export async function dispatchAgentWave(signal: NeuralPulse): Promise<FluidResul
     const statusText = document.getElementById('statusText');
     const statusDot = document.getElementById('statusDot');
     const progressBar = document.getElementById('progressBar');
+    const progressTrack = document.getElementById('progressTrack');
     const valSpeed = document.getElementById('valSpeed');
 
     let isSimulating = false;
@@ -740,6 +810,7 @@ export async function dispatchAgentWave(signal: NeuralPulse): Promise<FluidResul
         p += 2.5;
         if (p > 92) p = 92;
         progressBar.style.width = `${p}%`;
+        if (progressTrack) progressTrack.setAttribute('aria-valuenow', p.toFixed(1));
         valSpeed.innerHTML = `${(Math.random() * 20 + 95).toFixed(1)} <span style="font-size:14px;color:rgba(255,255,255,0.5);">t/s</span>`;
       }, 200);
 
@@ -752,11 +823,19 @@ export async function dispatchAgentWave(signal: NeuralPulse): Promise<FluidResul
       }, 2600);
     });
 
-    // ---------- Gooey Switch 点击切换 ----------
+    // ---------- Gooey Switch 点击 / 键盘切换 ----------
     const switchWrap = document.getElementById('switchWrap');
     const gooSwitch = document.getElementById('gooSwitch');
-    switchWrap.addEventListener('click', () => {
+    function toggleSwitch() {
       gooSwitch.classList.toggle('active');
+      switchWrap.setAttribute('aria-checked', String(gooSwitch.classList.contains('active')));
+    }
+    switchWrap.addEventListener('click', toggleSwitch);
+    switchWrap.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleSwitch();
+      }
     });
   </script>
 </body>
